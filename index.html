@@ -1,0 +1,1052 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Sudoku Mix</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Nunito:wght@400;700;800&display=swap" rel="stylesheet">
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    font-family: 'Nunito', sans-serif;
+    background: #fff;
+    color: #111;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 24px;
+  }
+
+  h1 { font-weight: 800; font-size: 28px; margin-bottom: 14px; letter-spacing: 0.5px; }
+
+  #controls { display: flex; gap: 10px; margin-bottom: 10px; }
+
+  button {
+    font-family: 'Nunito', sans-serif;
+    font-weight: 700;
+    font-size: 15px;
+    padding: 8px 18px;
+    border: 1.5px solid #2d2d2d;
+    border-radius: 8px;
+    background: #fff;
+    color: #111;
+    cursor: pointer;
+  }
+  button:hover { background: #f3f4f6; }
+  button:disabled { opacity: 0.5; cursor: default; }
+
+  .btn-diff { color: #2d2d2d; }
+  .btn-diff.active { background: #2d2d2d; color: #fff; }
+
+  #status { font-size: 14px; color: #555; margin-bottom: 16px; min-height: 20px; }
+
+  #layout { display: flex; align-items: flex-start; gap: 24px; }
+
+  #app { display: flex; flex-direction: column; align-items: center; }
+
+  /* Saved puzzles panel */
+  #saved-panel {
+    flex: 0 0 200px;
+    width: 200px;
+    max-height: calc(100vh - 48px);
+    overflow-y: auto;
+    position: sticky;
+    top: 24px;
+    background: #f8f8f8;
+    border-right: 1px solid #ddd;
+    padding: 14px 12px;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+  #saved-panel h2 { font-size: 16px; font-weight: 800; }
+  #saved-panel button { font-size: 13px; padding: 6px 12px; width: 100%; }
+  #btn-clear-all { margin-top: auto; }
+
+  .saved-section h3 {
+    font-size: 12px;
+    font-weight: 700;
+    color: #555;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    margin: 6px 0 4px;
+  }
+  .saved-empty { font-size: 12px; color: #999; padding: 2px 0 4px; }
+
+  .saved-item {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 5px 6px;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 14px;
+  }
+  .saved-item:hover { background: #ececec; }
+  .saved-item.current { background: rgba(37, 99, 235, 0.12); }
+  .saved-item .num { font-weight: 700; flex: 1; }
+
+  .badge {
+    font-size: 11px;
+    font-weight: 700;
+    padding: 1px 7px;
+    border: 1.5px solid #2d2d2d;
+    border-radius: 6px;
+    color: #2d2d2d;
+  }
+  .badge.active { background: #2d2d2d; color: #fff; }
+
+  #saved-panel .saved-item .del {
+    width: auto;
+    padding: 0 5px;
+    font-size: 16px;
+    line-height: 18px;
+    border: none;
+    background: none;
+    color: #888;
+  }
+  #saved-panel .saved-item .del:hover { color: #dc2626; background: none; }
+
+  #puzzle-wrap { position: relative; width: 780px; height: 780px; }
+
+  .grid {
+    position: absolute;
+    display: grid;
+    grid-template-columns: repeat(9, 52px);
+    grid-template-rows: repeat(9, 52px);
+  }
+  #jigsaw   { top: 0;     left: 0; }
+  #diagonal { top: 312px; left: 312px; }
+
+  .cell {
+    width: 52px;
+    height: 52px;
+    border-right: 1px solid #bbb;
+    border-bottom: 1px solid #bbb;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 44px;
+    line-height: 1;
+    background: #fff;
+    cursor: pointer;
+    user-select: none;
+  }
+  .cell.ghost { visibility: hidden; pointer-events: none; }
+  .cell.given { font-weight: 700; color: #111; cursor: default; }
+  .cell.user  { font-weight: 400; color: #2563eb; }
+  .cell.selected { background: rgba(37, 99, 235, 0.12); }
+  .cell.user.correct   { color: #16a34a; }
+  .cell.user.incorrect { color: #dc2626; }
+
+  svg.overlay {
+    position: absolute;
+    pointer-events: none;
+    z-index: 10;
+    overflow: visible;
+  }
+  #jigsaw-svg { top: 0;     left: 0; }
+  #diag-svg, #diag-lines { top: 312px; left: 312px; }
+
+  @media print {
+    @page { size: A4 landscape; margin: 1cm; }
+
+    * {
+      -webkit-print-color-adjust: exact;
+      print-color-adjust: exact;
+    }
+
+    h1, #controls, #status, #saved-panel { display: none; }
+
+    body, #layout, #app { display: block; padding: 0; }
+
+    /* Combined layout is 780x780px (468px jigsaw at 0,0 + 468px diagonal
+       at 312,312). Printable area: 277mm x 190mm (A4 landscape minus 1cm
+       margins) ~= 1047 x 718px at 96dpi, so max scale is 718/780 ~= 0.92;
+       0.8 (-> 624px) leaves ~47px top/bottom and ~211px left/right.
+       position: fixed is load-bearing: pagination slices boxes in
+       UNtransformed coordinates, so the 780px box always crosses the
+       718px page boundary — fixed boxes are the only ones that never
+       fragment. Absolute units only: percentage offsets can resolve
+       against the screen viewport when printing, displacing the puzzle. */
+    #puzzle-wrap {
+      position: fixed;
+      top: calc((190mm - 624px) / 2);
+      left: calc((277mm - 624px) / 2);
+      transform: scale(0.8);
+      transform-origin: top left;
+    }
+
+    .cell { background: #fff !important; color: #000 !important; }
+
+    svg.overlay, svg.overlay * { opacity: 1 !important; }
+    svg.overlay line { stroke-opacity: 1 !important; }
+  }
+</style>
+</head>
+<body>
+
+<div id="layout">
+
+<aside id="saved-panel">
+  <h2>Saved Puzzles</h2>
+  <button id="btn-save">Save</button>
+  <div id="saved-list"></div>
+  <button id="btn-clear-all">Clear All</button>
+</aside>
+
+<div id="app">
+
+<h1>Sudoku Mix</h1>
+
+<div id="controls">
+  <button class="btn-diff active" id="btnEasy">Easy</button>
+  <button class="btn-diff" id="btnMedium">Medium</button>
+  <button class="btn-diff" id="btnHard">Hard</button>
+  <button id="btnNew">New Puzzle</button>
+  <button id="btn-check">Check</button>
+  <button id="btn-solve">Solve</button>
+  <button id="btn-print">Print</button>
+</div>
+
+<div id="status"></div>
+
+<div id="puzzle-wrap">
+  <div id="jigsaw" class="grid"></div>
+  <div id="diagonal" class="grid"></div>
+  <svg id="jigsaw-svg" class="overlay" width="468" height="468"></svg>
+  <svg id="diag-svg" class="overlay" width="468" height="468"></svg>
+  <svg id="diag-lines" class="overlay" width="468" height="468"></svg>
+</div>
+
+</div><!-- #app -->
+</div><!-- #layout -->
+
+<script>
+// ===== CONSTANTS =====
+
+const CELL_PX = 52;
+const GRID_N = 9;
+const OFFSET = 6;            // diagonal grid offset in cells (both axes)
+const N_CELLS = 153;         // 81 + 81 - 9 overlap
+const ALL_CANDS = 0b1111111110;  // candidate bits for digits 1..9
+const NODE_LIMIT = 150;
+
+// Global coordinate space: 15x15; jigsaw occupies rows/cols 0-8,
+// diagonal grid occupies rows/cols 6-14. Overlap rows/cols 6-8.
+const CELLS = [];
+const IDX = new Int16Array(15 * 15).fill(-1);
+for (let r = 0; r < 15; r++) {
+  for (let c = 0; c < 15; c++) {
+    const inJig = r < 9 && c < 9;
+    const inDiag = r >= 6 && c >= 6;
+    if (inJig || inDiag) {
+      IDX[r * 15 + c] = CELLS.length;
+      CELLS.push({ r, c, inJig, inDiag });
+    }
+  }
+}
+
+function randInt(n) { return Math.floor(Math.random() * n); }
+
+function shuffle(arr) {
+  for (let i = arr.length - 1; i > 0; i--) {
+    const j = randInt(i + 1);
+    [arr[i], arr[j]] = [arr[j], arr[i]];
+  }
+  return arr;
+}
+
+function popcount(x) { let n = 0; while (x) { x &= x - 1; n++; } return n; }
+
+function lowDigit(mask) {
+  for (let d = 1; d <= 9; d++) if (mask & (1 << d)) return d;
+  return 0;
+}
+
+// ===== REGION GENERATOR =====
+// Jigsaw regions over the 9x9 jigsaw grid (local coords). Region 0 is
+// pre-assigned to the overlap block (rows 6-8, cols 6-8) and never grown.
+
+const JIG_NEIGHBORS = [];
+for (let r = 0; r < 9; r++) {
+  for (let c = 0; c < 9; c++) {
+    const nb = [];
+    if (r > 0) nb.push((r - 1) * 9 + c);
+    if (r < 8) nb.push((r + 1) * 9 + c);
+    if (c > 0) nb.push(r * 9 + c - 1);
+    if (c < 8) nb.push(r * 9 + c + 1);
+    JIG_NEIGHBORS.push(nb);
+  }
+}
+
+function tryGenerateRegions() {
+  const reg = new Int8Array(81).fill(-1);
+  for (let r = 6; r < 9; r++)
+    for (let c = 6; c < 9; c++)
+      reg[r * 9 + c] = 0;
+
+  const sizes = [9, 0, 0, 0, 0, 0, 0, 0, 0];
+  const frontiers = [null];
+
+  // One seed per non-overlap 3x3 quadrant (8 of them).
+  let id = 1;
+  for (let br = 0; br < 3; br++) {
+    for (let bc = 0; bc < 3; bc++) {
+      if (br === 2 && bc === 2) continue;  // overlap quadrant
+      const seed = (br * 3 + randInt(3)) * 9 + (bc * 3 + randInt(3));
+      reg[seed] = id;
+      sizes[id] = 1;
+      const fr = new Set();
+      for (const nb of JIG_NEIGHBORS[seed]) if (reg[nb] === -1) fr.add(nb);
+      frontiers.push(fr);
+      id++;
+    }
+  }
+
+  let remaining = 81 - 9 - 8;
+  while (remaining > 0) {
+    // Abort immediately if any incomplete region is walled in. Otherwise
+    // grow the region in most danger of being walled in (smallest frontier),
+    // breaking ties by smallest size, then randomly.
+    let grow = -1, bestKey = Infinity;
+    for (let i = 1; i < 9; i++) {
+      if (sizes[i] >= 9) continue;
+      if (frontiers[i].size === 0) return null;
+      const key = frontiers[i].size * 16 + sizes[i];
+      if (key < bestKey || (key === bestKey && Math.random() < 0.5)) {
+        bestKey = key;
+        grow = i;
+      }
+    }
+
+    // Weighted pick from frontier: weight = (same-region neighbors)^2 + 1
+    let total = 0;
+    const opts = [];
+    for (const cell of frontiers[grow]) {
+      let same = 0;
+      for (const nb of JIG_NEIGHBORS[cell]) if (reg[nb] === grow) same++;
+      const w = same * same + 1;
+      opts.push([cell, w]);
+      total += w;
+    }
+    let pick = Math.random() * total;
+    let chosen = opts[opts.length - 1][0];
+    for (const [cell, w] of opts) {
+      pick -= w;
+      if (pick <= 0) { chosen = cell; break; }
+    }
+
+    reg[chosen] = grow;
+    sizes[grow]++;
+    remaining--;
+    for (let i = 1; i < 9; i++) frontiers[i].delete(chosen);
+    for (const nb of JIG_NEIGHBORS[chosen]) {
+      if (reg[nb] === -1) frontiers[grow].add(nb);
+    }
+  }
+
+  // Validate connectivity of every region.
+  for (let i = 0; i < 9; i++) {
+    const cells = [];
+    for (let k = 0; k < 81; k++) if (reg[k] === i) cells.push(k);
+    if (cells.length !== 9) return null;
+    const seen = new Set([cells[0]]);
+    const stack = [cells[0]];
+    while (stack.length) {
+      const cur = stack.pop();
+      for (const nb of JIG_NEIGHBORS[cur]) {
+        if (reg[nb] === i && !seen.has(nb)) { seen.add(nb); stack.push(nb); }
+      }
+    }
+    if (seen.size !== 9) return null;
+  }
+
+  // Reject if any grown region is exactly a standard 3x3 box.
+  for (let i = 1; i < 9; i++) {
+    let minR = 9, maxR = -1, minC = 9, maxC = -1;
+    for (let k = 0; k < 81; k++) {
+      if (reg[k] !== i) continue;
+      const r = Math.floor(k / 9), c = k % 9;
+      if (r < minR) minR = r;
+      if (r > maxR) maxR = r;
+      if (c < minC) minC = c;
+      if (c > maxC) maxC = c;
+    }
+    if (maxR - minR === 2 && maxC - minC === 2 &&
+        minR % 3 === 0 && minC % 3 === 0) return null;
+  }
+
+  return reg;
+}
+
+function generateRegions() {
+  for (let attempt = 1; attempt <= 200; attempt++) {
+    const reg = tryGenerateRegions();
+    if (reg) return reg;
+  }
+  throw new Error('Region generation exceeded 200 attempts');
+}
+
+// ===== SOLVER =====
+// Constraint groups: jigsaw rows/cols/regions, diagonal-grid rows/cols/boxes,
+// plus both main diagonals of the diagonal grid.
+
+function buildConstraints(regionMap) {
+  const groups = [];
+
+  for (let r = 0; r < 9; r++) {            // jigsaw rows
+    const g = [];
+    for (let c = 0; c < 9; c++) g.push(IDX[r * 15 + c]);
+    groups.push(g);
+  }
+  for (let c = 0; c < 9; c++) {            // jigsaw cols
+    const g = [];
+    for (let r = 0; r < 9; r++) g.push(IDX[r * 15 + c]);
+    groups.push(g);
+  }
+  const regCells = Array.from({ length: 9 }, () => []);   // jigsaw regions
+  for (let r = 0; r < 9; r++)
+    for (let c = 0; c < 9; c++)
+      regCells[regionMap[r * 9 + c]].push(IDX[r * 15 + c]);
+  groups.push(...regCells);
+
+  for (let r = 6; r < 15; r++) {           // diagonal-grid rows
+    const g = [];
+    for (let c = 6; c < 15; c++) g.push(IDX[r * 15 + c]);
+    groups.push(g);
+  }
+  for (let c = 6; c < 15; c++) {           // diagonal-grid cols
+    const g = [];
+    for (let r = 6; r < 15; r++) g.push(IDX[r * 15 + c]);
+    groups.push(g);
+  }
+  for (let br = 0; br < 3; br++) {         // diagonal-grid 3x3 boxes
+    for (let bc = 0; bc < 3; bc++) {
+      const g = [];
+      for (let r = 0; r < 3; r++)
+        for (let c = 0; c < 3; c++)
+          g.push(IDX[(6 + br * 3 + r) * 15 + (6 + bc * 3 + c)]);
+      groups.push(g);
+    }
+  }
+  const main = [], anti = [];              // both diagonals
+  for (let i = 0; i < 9; i++) {
+    main.push(IDX[(6 + i) * 15 + (6 + i)]);
+    anti.push(IDX[(6 + i) * 15 + (14 - i)]);
+  }
+  groups.push(main, anti);
+
+  const peerSets = Array.from({ length: N_CELLS }, () => new Set());
+  for (const g of groups)
+    for (const a of g)
+      for (const b of g)
+        if (a !== b) peerSets[a].add(b);
+
+  return { groups, peers: peerSets.map(s => Array.from(s)) };
+}
+
+const SOLVE_TIMEOUT = Symbol('timeout');
+
+function solve(ctx, givens, opts = {}) {
+  const randomize = !!opts.randomize;
+  const limit = opts.limit || 2;
+  const nodeLimit = opts.nodeLimit || NODE_LIMIT;
+  const { groups, peers } = ctx;
+  let nodes = 0;
+  const found = [];
+
+  function assign(values, cand, i, d) {
+    if (!(cand[i] & (1 << d))) return false;
+    values[i] = d;
+    cand[i] = 1 << d;
+    for (const p of peers[i]) {
+      if (values[p]) continue;
+      if (cand[p] & (1 << d)) {
+        cand[p] &= ~(1 << d);
+        if (cand[p] === 0) return false;
+      }
+    }
+    return true;
+  }
+
+  function propagate(values, cand) {
+    let changed = true;
+    while (changed) {
+      changed = false;
+
+      // Naked singles
+      for (let i = 0; i < N_CELLS; i++) {
+        if (!values[i] && popcount(cand[i]) === 1) {
+          if (!assign(values, cand, i, lowDigit(cand[i]))) return false;
+          changed = true;
+        }
+      }
+
+      // Hidden singles
+      for (const g of groups) {
+        for (let d = 1; d <= 9; d++) {
+          const bit = 1 << d;
+          let cnt = 0, where = -1, placed = false;
+          for (const i of g) {
+            if (values[i] === d) { placed = true; break; }
+            if (!values[i] && (cand[i] & bit)) { cnt++; where = i; }
+          }
+          if (placed) continue;
+          if (cnt === 0) return false;
+          if (cnt === 1) {
+            if (!assign(values, cand, where, d)) return false;
+            changed = true;
+          }
+        }
+      }
+    }
+    return true;
+  }
+
+  function search(values, cand) {
+    if (++nodes > nodeLimit) throw SOLVE_TIMEOUT;
+    if (!propagate(values, cand)) return;
+
+    // MRV: pick unassigned cell with fewest candidates
+    let best = -1, bestN = 10;
+    for (let i = 0; i < N_CELLS; i++) {
+      if (!values[i]) {
+        const n = popcount(cand[i]);
+        if (n < bestN) { bestN = n; best = i; }
+      }
+    }
+    if (best === -1) { found.push(values.slice()); return; }
+
+    const digits = [];
+    for (let d = 1; d <= 9; d++) if (cand[best] & (1 << d)) digits.push(d);
+    if (randomize) shuffle(digits);
+
+    for (const d of digits) {
+      if (found.length >= limit) return;
+      const v2 = values.slice();
+      const c2 = cand.slice();
+      if (assign(v2, c2, best, d)) search(v2, c2);
+    }
+  }
+
+  const values = new Uint8Array(N_CELLS);
+  const cand = new Uint16Array(N_CELLS).fill(ALL_CANDS);
+  for (let i = 0; i < N_CELLS; i++) {
+    if (givens[i]) {
+      if (!assign(values, cand, i, givens[i]))
+        return { status: 'UNSOLVABLE', solutions: found };
+    }
+  }
+
+  try {
+    search(values, cand);
+  } catch (e) {
+    if (e === SOLVE_TIMEOUT) return { status: 'TIMEOUT', solutions: found };
+    throw e;
+  }
+
+  const status = found.length === 0 ? 'UNSOLVABLE'
+               : found.length === 1 ? 'SOLVED'
+               : 'MULTIPLE_SOLUTIONS';
+  return { status, solutions: found };
+}
+
+// ===== PUZZLE GENERATOR =====
+
+// minClues: stop removing from a grid once its clue count reaches this.
+// zoneMin: never let a 3x3 zone of either grid drop below this many clues.
+// zoneMin must stay <= minClues / 9, or the zone floor overrides the target.
+const DIFFICULTIES = {
+  easy:   { minClues: 25, zoneMin: 2 },
+  medium: { minClues: 20, zoneMin: 2 },
+  hard:   { minClues: 16, zoneMin: 1 }
+};
+let difficulty = 'easy';
+
+function generatePuzzle() {
+  for (let regionTry = 0; regionTry < 20; regionTry++) {
+    let t = performance.now();
+    const regionMap = generateRegions();
+    console.log(`[gen] region generation: ${(performance.now() - t).toFixed(1)}ms`);
+
+    const ctx = buildConstraints(regionMap);
+
+    // Fill full solution with randomized candidate order.
+    t = performance.now();
+    let solution = null;
+    const empty = new Uint8Array(N_CELLS);
+    for (let retry = 0; retry < 10 && !solution; retry++) {
+      const res = solve(ctx, empty, { randomize: true, limit: 1 });
+      if (res.status === 'SOLVED') solution = res.solutions[0];
+    }
+    console.log(`[gen] solver fill: ${(performance.now() - t).toFixed(1)}ms`);
+    if (!solution) {
+      console.log('[gen] fill timed out 10 times, regenerating regions');
+      continue;
+    }
+
+    // Remove clues while the solution stays unique.
+    t = performance.now();
+    const { minClues, zoneMin } = DIFFICULTIES[difficulty];
+    const givens = solution.slice();
+    let jigCount = 81, diagCount = 81;
+    const jigZones = new Array(9).fill(9);    // clues per 3x3 zone of each grid
+    const diagZones = new Array(9).fill(9);
+
+    const jigZone = (r, c) => (r / 3 | 0) * 3 + (c / 3 | 0);
+    const diagZone = (r, c) => ((r - 6) / 3 | 0) * 3 + ((c - 6) / 3 | 0);
+
+    function removeAt(i) {
+      const { r, c, inJig, inDiag } = CELLS[i];
+      givens[i] = 0;
+      if (inJig) { jigCount--; jigZones[jigZone(r, c)]--; }
+      if (inDiag) { diagCount--; diagZones[diagZone(r, c)]--; }
+    }
+
+    // Cells on either main diagonal of the diagonal grid are never clues.
+    const order = [];
+    for (const i of shuffle([...Array(N_CELLS).keys()])) {
+      const { r, c, inDiag } = CELLS[i];
+      const lr = r - 6, lc = c - 6;
+      if (inDiag && (lr === lc || lr + lc === 8)) removeAt(i);
+      else order.push(i);
+    }
+    if (solve(ctx, givens, { limit: 2 }).status !== 'SOLVED') {
+      console.log('[gen] not unique after clearing diagonal cells, regenerating');
+      continue;
+    }
+
+    for (const i of order) {
+      const { r, c, inJig, inDiag } = CELLS[i];
+      if (inJig && (jigCount <= minClues || jigZones[jigZone(r, c)] <= zoneMin)) continue;
+      if (inDiag && (diagCount <= minClues || diagZones[diagZone(r, c)] <= zoneMin)) continue;
+      const saved = givens[i];
+      givens[i] = 0;
+      const unique = solve(ctx, givens, { limit: 2 }).status === 'SOLVED';
+      givens[i] = saved;   // MULTIPLE_SOLUTIONS or TIMEOUT: keep the clue
+      if (unique) removeAt(i);
+    }
+    console.log(`[gen] clue removal: ${(performance.now() - t).toFixed(1)}ms ` +
+                `(jigsaw ${jigCount} clues, diagonal ${diagCount} clues)`);
+
+    // Zone minimums can force more clues than minClues (zoneMin * 9 per grid),
+    // so the retry threshold is measured from whichever floor is higher.
+    const maxClues = Math.max(minClues, zoneMin * 9) + 4;
+    if ((jigCount <= maxClues && diagCount <= maxClues) || regionTry >= 2) {
+      if (jigCount > maxClues || diagCount > maxClues)
+        console.log('[gen] accepting puzzle above clue target after retries');
+      return { regionMap, solution, givens, jigCount, diagCount };
+    }
+    console.log('[gen] clue count above target, retrying with new regions');
+  }
+  throw new Error('Puzzle generation failed');
+}
+
+// ===== RENDERER =====
+
+const wrapEl = document.getElementById('puzzle-wrap');
+const jigEl = document.getElementById('jigsaw');
+const diagEl = document.getElementById('diagonal');
+const svgJig = document.getElementById('jigsaw-svg');
+const svgDiag = document.getElementById('diag-svg');
+const svgLines = document.getElementById('diag-lines');
+
+let cellEls = [];
+
+function svgLine(svg, x1, y1, x2, y2, stroke, width, extra) {
+  const line = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+  line.setAttribute('x1', x1);
+  line.setAttribute('y1', y1);
+  line.setAttribute('x2', x2);
+  line.setAttribute('y2', y2);
+  line.setAttribute('stroke', stroke);
+  line.setAttribute('stroke-width', width);
+  line.setAttribute('stroke-linecap', 'square');
+  if (extra) for (const k in extra) line.setAttribute(k, extra[k]);
+  svg.appendChild(line);
+}
+
+function drawJigsawSVG(regionMap) {
+  svgJig.innerHTML = '';
+  // Vertical edges: thick wherever regions differ (outer edges included).
+  for (let r = 0; r < 9; r++) {
+    for (let c = 0; c <= 9; c++) {
+      const left = c > 0 ? regionMap[r * 9 + c - 1] : -1;
+      const right = c < 9 ? regionMap[r * 9 + c] : -2;
+      if (left !== right)
+        svgLine(svgJig, c * CELL_PX, r * CELL_PX, c * CELL_PX, (r + 1) * CELL_PX, '#2d2d2d', 3);
+    }
+  }
+  // Horizontal edges
+  for (let c = 0; c < 9; c++) {
+    for (let r = 0; r <= 9; r++) {
+      const top = r > 0 ? regionMap[(r - 1) * 9 + c] : -1;
+      const bottom = r < 9 ? regionMap[r * 9 + c] : -2;
+      if (top !== bottom)
+        svgLine(svgJig, c * CELL_PX, r * CELL_PX, (c + 1) * CELL_PX, r * CELL_PX, '#2d2d2d', 3);
+    }
+  }
+}
+
+function drawDiagSVG() {
+  svgDiag.innerHTML = '';
+  const B = 3 * CELL_PX;   // 156: one box
+  const S = 9 * CELL_PX;   // 468: full grid
+  // Lines at row/col 0, 3, 6, 9. The segments along the overlap block
+  // (k = 0 and k = 1, first box length) coincide with borders the jigsaw
+  // SVG already draws, so the diagonal grid must not redraw them.
+  for (let k = 0; k <= 3; k++) {
+    const pos = k * B;
+    const start = k < 2 ? B : 0;
+    svgLine(svgDiag, pos, start, pos, S, '#2d2d2d', 3);   // vertical
+    svgLine(svgDiag, start, pos, S, pos, '#2d2d2d', 3);   // horizontal
+  }
+}
+
+function drawDiagLines() {
+  svgLines.innerHTML = '';
+  const S = 9 * CELL_PX;
+  svgLine(svgLines, 0, 0, S, S, 'rgba(0,0,0,0.13)', 1.5);
+  svgLine(svgLines, 0, S, S, 0, 'rgba(0,0,0,0.13)', 1.5);
+}
+
+function buildBoard(regionMap) {
+  jigEl.innerHTML = '';
+  diagEl.innerHTML = '';
+  cellEls = new Array(N_CELLS).fill(null);
+
+  for (let r = 0; r < 9; r++) {
+    for (let c = 0; c < 9; c++) {
+      const div = document.createElement('div');
+      div.className = 'cell';
+      const idx = IDX[r * 15 + c];
+      div.dataset.idx = idx;
+      cellEls[idx] = div;
+      jigEl.appendChild(div);
+    }
+  }
+
+  for (let r = 0; r < 9; r++) {
+    for (let c = 0; c < 9; c++) {
+      const div = document.createElement('div');
+      if (r < 3 && c < 3) {
+        // Overlap cells are owned by the jigsaw grid; render placeholders only.
+        div.className = 'cell ghost';
+      } else {
+        div.className = 'cell';
+        const idx = IDX[(r + OFFSET) * 15 + (c + OFFSET)];
+        div.dataset.idx = idx;
+        cellEls[idx] = div;
+      }
+      diagEl.appendChild(div);
+    }
+  }
+
+  drawJigsawSVG(regionMap);
+  drawDiagSVG();
+  drawDiagLines();
+}
+
+function renderValues() {
+  for (let i = 0; i < N_CELLS; i++) {
+    const el = cellEls[i];
+    const given = state.givens[i];
+    const user = state.user[i];
+    el.classList.remove('given', 'user', 'correct', 'incorrect');
+    if (given) {
+      el.textContent = given;
+      el.classList.add('given');
+    } else if (user) {
+      el.textContent = user;
+      el.classList.add('user');
+    } else {
+      el.textContent = '';
+    }
+  }
+}
+
+// ===== UI CONTROLLER =====
+
+const statusEl = document.getElementById('status');
+const buttons = ['btnNew', 'btn-check', 'btn-solve', 'btn-print', 'btn-save']
+  .map(id => document.getElementById(id));
+const [btnNew, btnCheck, btnSolve, btnPrint, btnSave] = buttons;
+
+let state = null;
+let selected = -1;
+
+function setBusy(busy) {
+  for (const b of buttons) b.disabled = busy;
+}
+
+function newPuzzle() {
+  statusEl.textContent = 'Generating…';
+  setBusy(true);
+  selected = -1;
+  setTimeout(() => {
+    try {
+      const t0 = performance.now();
+      const p = generatePuzzle();
+      console.log(`[gen] total: ${(performance.now() - t0).toFixed(1)}ms`);
+      state = {
+        regionMap: p.regionMap,
+        givens: p.givens,
+        solution: p.solution,
+        user: new Uint8Array(N_CELLS),
+        difficulty,
+        savedId: null
+      };
+      buildBoard(p.regionMap);
+      renderValues();
+      renderSavedList();
+      statusEl.textContent =
+        `Jigsaw: ${p.jigCount} clues · Diagonal: ${p.diagCount} clues`;
+    } catch (err) {
+      console.error(err);
+      statusEl.textContent = 'Generation failed — try again.';
+    } finally {
+      setBusy(false);
+    }
+  }, 30);
+}
+
+function selectCell(idx) {
+  if (selected >= 0 && cellEls[selected])
+    cellEls[selected].classList.remove('selected');
+  selected = idx;
+  if (selected >= 0) cellEls[selected].classList.add('selected');
+}
+
+wrapEl.addEventListener('click', (e) => {
+  const cell = e.target.closest('.cell');
+  if (!cell || cell.classList.contains('ghost') || !state) return;
+  selectCell(parseInt(cell.dataset.idx, 10));
+});
+
+document.addEventListener('keydown', (e) => {
+  if (!state || selected < 0) return;
+  if (state.givens[selected]) return;
+  const el = cellEls[selected];
+  if (e.key >= '1' && e.key <= '9') {
+    state.user[selected] = parseInt(e.key, 10);
+    el.textContent = e.key;
+    el.classList.add('user');
+    el.classList.remove('correct', 'incorrect');
+    e.preventDefault();
+  } else if (e.key === 'Delete' || e.key === 'Backspace' || e.key === '0') {
+    state.user[selected] = 0;
+    el.textContent = '';
+    el.classList.remove('user', 'correct', 'incorrect');
+    e.preventDefault();
+  }
+});
+
+btnNew.addEventListener('click', newPuzzle);
+
+const DIFF_BUTTONS = { easy: 'btnEasy', medium: 'btnMedium', hard: 'btnHard' };
+
+function setDifficulty(name) {
+  difficulty = name;
+  const btn = document.getElementById(DIFF_BUTTONS[name]);
+  document.querySelectorAll('.btn-diff')
+    .forEach(b => b.classList.toggle('active', b === btn));
+  renderSavedList();
+}
+
+for (const name of Object.keys(DIFF_BUTTONS)) {
+  document.getElementById(DIFF_BUTTONS[name])
+    .addEventListener('click', () => setDifficulty(name));
+}
+
+btnCheck.addEventListener('click', () => {
+  if (!state) return;
+  for (let i = 0; i < N_CELLS; i++) {
+    if (state.givens[i] || !state.user[i]) continue;
+    const ok = state.user[i] === state.solution[i];
+    cellEls[i].classList.toggle('correct', ok);
+    cellEls[i].classList.toggle('incorrect', !ok);
+  }
+});
+
+btnSolve.addEventListener('click', () => {
+  if (!state) return;
+  for (let i = 0; i < N_CELLS; i++) {
+    if (!state.givens[i]) state.user[i] = state.solution[i];
+  }
+  renderValues();
+});
+
+btnPrint.addEventListener('click', () => window.print());
+
+// ===== SAVED PUZZLES (localStorage) =====
+// "sudoku_counter": integer, increments on every save, never reset.
+// "sudoku_puzzles": JSON array of { id, difficulty, clues }, where clues holds
+// the given digits per grid in that grid's local 0-8 coordinates as
+// [row, col, digit] (overlap cells appear in both lists) plus the jigsaw
+// region map. The solution is re-derived with the solver on load.
+
+const STORAGE_COUNTER = 'sudoku_counter';
+const STORAGE_PUZZLES = 'sudoku_puzzles';
+const DIFF_LABELS = { easy: 'Easy', medium: 'Medium', hard: 'Hard' };
+
+const btnClearAll = document.getElementById('btn-clear-all');
+const savedListEl = document.getElementById('saved-list');
+
+function loadSavedPuzzles() {
+  try {
+    const arr = JSON.parse(localStorage.getItem(STORAGE_PUZZLES) || '[]');
+    return Array.isArray(arr) ? arr : [];
+  } catch (e) {
+    return [];
+  }
+}
+
+function storeSavedPuzzles(list) {
+  localStorage.setItem(STORAGE_PUZZLES, JSON.stringify(list));
+}
+
+function nextPuzzleId() {
+  const n = (parseInt(localStorage.getItem(STORAGE_COUNTER), 10) || 0) + 1;
+  localStorage.setItem(STORAGE_COUNTER, String(n));
+  return n;
+}
+
+function serializeClues(st) {
+  const jigsaw = [], diagonal = [];
+  for (let i = 0; i < N_CELLS; i++) {
+    const v = st.givens[i];
+    if (!v) continue;
+    const { r, c, inJig, inDiag } = CELLS[i];
+    if (inJig) jigsaw.push([r, c, v]);
+    if (inDiag) diagonal.push([r - OFFSET, c - OFFSET, v]);
+  }
+  return { jigsaw, diagonal, regions: Array.from(st.regionMap) };
+}
+
+function clueSummary(givens) {
+  let jig = 0, diag = 0;
+  for (let i = 0; i < N_CELLS; i++) {
+    if (!givens[i]) continue;
+    if (CELLS[i].inJig) jig++;
+    if (CELLS[i].inDiag) diag++;
+  }
+  return `Jigsaw: ${jig} clues · Diagonal: ${diag} clues`;
+}
+
+function savePuzzle() {
+  if (!state) return;
+  const list = loadSavedPuzzles();
+  const entry = {
+    id: nextPuzzleId(),
+    difficulty: DIFF_LABELS[state.difficulty],
+    clues: serializeClues(state)
+  };
+  list.push(entry);
+  storeSavedPuzzles(list);
+  state.savedId = entry.id;
+  renderSavedList();
+  statusEl.textContent = `Saved as #${entry.id} · ${clueSummary(state.givens)}`;
+}
+
+function loadSavedPuzzle(entry) {
+  const { jigsaw, diagonal, regions } = entry.clues;
+  const regionMap = Int8Array.from(regions);
+  const givens = new Uint8Array(N_CELLS);
+  for (const [r, c, v] of jigsaw) givens[IDX[r * 15 + c]] = v;
+  for (const [r, c, v] of diagonal) givens[IDX[(r + OFFSET) * 15 + (c + OFFSET)]] = v;
+
+  const res = solve(buildConstraints(regionMap), givens, { limit: 1 });
+  if (res.solutions.length === 0) {
+    statusEl.textContent = `Could not solve saved puzzle #${entry.id}.`;
+    return;
+  }
+
+  const diff = Object.keys(DIFF_LABELS)
+    .find(k => DIFF_LABELS[k] === entry.difficulty) || difficulty;
+  selected = -1;
+  state = {
+    regionMap,
+    givens,
+    solution: res.solutions[0],
+    user: new Uint8Array(N_CELLS),
+    difficulty: diff,
+    savedId: entry.id
+  };
+  setDifficulty(diff);
+  buildBoard(regionMap);
+  renderValues();
+  statusEl.textContent = `Loaded #${entry.id} · ${clueSummary(givens)}`;
+}
+
+function deleteSavedPuzzle(id) {
+  storeSavedPuzzles(loadSavedPuzzles().filter(p => p.id !== id));
+  if (state && state.savedId === id) state.savedId = null;
+  renderSavedList();
+}
+
+function renderSavedList() {
+  const list = loadSavedPuzzles();
+  savedListEl.innerHTML = '';
+  for (const label of ['Easy', 'Medium', 'Hard']) {
+    const section = document.createElement('div');
+    section.className = 'saved-section';
+    const h = document.createElement('h3');
+    h.textContent = label;
+    section.appendChild(h);
+
+    const items = list.filter(p => p.difficulty === label);
+    if (items.length === 0) {
+      const empty = document.createElement('div');
+      empty.className = 'saved-empty';
+      empty.textContent = 'None saved';
+      section.appendChild(empty);
+    }
+    for (const p of items) {
+      const item = document.createElement('div');
+      item.className = 'saved-item';
+      if (state && state.savedId === p.id) item.classList.add('current');
+      item.addEventListener('click', () => loadSavedPuzzle(p));
+
+      const num = document.createElement('span');
+      num.className = 'num';
+      num.textContent = `#${p.id}`;
+
+      const badge = document.createElement('span');
+      badge.className = 'badge';
+      if (DIFF_LABELS[difficulty] === label) badge.classList.add('active');
+      badge.textContent = label;
+
+      const del = document.createElement('button');
+      del.className = 'del';
+      del.textContent = '×';
+      del.title = 'Delete';
+      del.addEventListener('click', (e) => {
+        e.stopPropagation();
+        deleteSavedPuzzle(p.id);
+      });
+
+      item.append(num, badge, del);
+      section.appendChild(item);
+    }
+    savedListEl.appendChild(section);
+  }
+}
+
+btnSave.addEventListener('click', savePuzzle);
+
+btnClearAll.addEventListener('click', () => {
+  if (!confirm('Delete all saved puzzles? This cannot be undone.')) return;
+  localStorage.removeItem(STORAGE_PUZZLES);
+  if (state) state.savedId = null;
+  renderSavedList();
+});
+
+renderSavedList();
+newPuzzle();
+</script>
+</body>
+</html>
